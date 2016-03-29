@@ -9,13 +9,15 @@ import (
 	"regexp"
 	"bufio"
 	"sort"
+"strings"
 )
 
-func rankFilesByOccurance(wordFrequencies map[string]int) PairList{
+//Sorting
+func rankFilesByOccurance(wordFrequencies map[string][]string) PairList{
 	pl := make(PairList, len(wordFrequencies))
 	i := 0
 	for k, v := range wordFrequencies {
-		pl[i] = Pair{k, v}
+		pl[i] = Pair{k, len(v), v}
 		i++
 	}
 	sort.Sort(sort.Reverse(pl))
@@ -25,55 +27,66 @@ func rankFilesByOccurance(wordFrequencies map[string]int) PairList{
 type Pair struct {
 	Key string
 	Value int
+	Payload []string
 }
 
 type PairList []Pair
-
 func (p PairList) Len() int { return len(p) }
 func (p PairList) Less(i, j int) bool { return p[i].Value < p[j].Value }
 func (p PairList) Swap(i, j int){ p[i], p[j] = p[j], p[i] }
 
+//Sorting End
 
 func main (){
-	var occurancesList = make(map[string]int)
+	//Init output file.
+	structureFile, _ := os.Create("./structure.txt")
+	defer structureFile.Close()
 
-	searchDir := "./"
+	//Init directory and regexs
+	searchDir := "../../../backend-services/Server/APIServer"
 	csprojRegex := regexp.MustCompile(".csproj")
 	fileIncludeRegex := regexp.MustCompile("(<Content Include=\")(.*)\"")
 
+	//Init the maps needed to hold the data
+	occurancesList := make(map[string][]string)
+	fileList := make(map[string]os.FileInfo)
 
-	fileList := []string{}
+	//Walk the root directory and look for .csproj files
 	err := filepath.Walk(searchDir, func(path string, f os.FileInfo, err error) error {
 		isProjFile := csprojRegex.FindString(path)
 		if isProjFile != ""{
-			fileList = append(fileList, path)
+			fileList[path] = f
 		}
 		return nil
 	})
 
 	if err != nil {
-
+		//TODO handle the error
 	}
 
-
-
-	for _, file := range fileList {
-		fileReader, _ := os.Open(file)
+	//Scan each csproj file and extract the includes
+	for path, fileInfo := range fileList {
+		fileReader, _ := os.Open(path)
 		scanner := bufio.NewScanner(fileReader)
 		for scanner.Scan() {
 			lineOfFile := scanner.Text()
 			jumpOverLine := fileIncludeRegex.FindAllStringSubmatch(lineOfFile, -2)
 			//Process line as part of migration
 			if len(jumpOverLine) != 0 {
-				occurancesList[jumpOverLine[0][2]] += 1
+				occurancesList[jumpOverLine[0][2]] = append(occurancesList[jumpOverLine[0][2]], fileInfo.Name())
 			}
 		}
 
 	}
 
+	//Order the extracted includes based on the number of times they appear in different csproj files.
 	pairList := rankFilesByOccurance(occurancesList)
-	for _, occurance := range pairList {
-		fmt.Println(occurance)
 
+	//Output the results to a file
+	for _, occurance := range pairList {
+		fmt.Println(occurance.Payload)
+		structureFile.WriteString(string(occurance.Key) + " : " + string(occurance.Value) + "\n")
+		structureFile.WriteString(strings.Join(occurance.Payload, " ") + "\n")
+		structureFile.WriteString("----------------------------------------------------------------\n\n\n")
 	}
 }
